@@ -90,7 +90,7 @@ class InfluenceLines:
                 return
             self.vResults.append(self.ba.beam_results)
 
-    def get_il(self, poi: float, load_effect: str) -> (np.ndarray, np.ndarray):
+    def get_il(self, poi: float, load_effect: str, z_na: float = 0.0) -> (np.ndarray, np.ndarray):
         """
         Returns the influence line at a point of interest for a load effect.
 
@@ -106,9 +106,15 @@ class InfluenceLines:
                 - **V**: shear force
                 - **M**: bending moment
                 - **R**: vertical reaction at a fully restrained support
+                - **MR**: moment reaction at a fully restrained support
+                - **S**: strain at distance, z_na, from the NA
+                - **T**: rotation
+                - **D**: displacement
 
             The vertical reaction nearest the `poi` is used. For moment reactions
             use a poi at or just beside the support.
+        z_na: float
+            The vertical distance from the neutral axis, only used for strain. Defaults to 0.0.
 
         Returns
         -------
@@ -181,15 +187,39 @@ class InfluenceLines:
             for i, res in enumerate(self.vResults):
                 eta[i] = res.R[mt_sup_idx]
 
-        else:
+        elif load_effect.upper() == "M":
             dx = x[2] - x[1]
             idx = np.where(np.abs(x - poi) <= dx * 1e-6)[0][0]
             for i, res in enumerate(self.vResults):
                 eta[i] = res.results.M[idx]
 
+        elif load_effect.upper() == "S":
+            dx = x[2] - x[1]
+            idx = np.where(np.abs(x - poi) <= dx * 1e-6)[0][0]
+            span_n, _ = self.ba.beam.get_local_span_coords(poi)
+            for i, res in enumerate(self.vResults):
+                eta[i] = z_na * res.results.M[idx] / self.ba._beam.mbr_EIs[span_n]
+
+        elif load_effect.upper() == "T":
+            dx = x[2] - x[1]
+            idx = np.where(np.abs(x - poi) <= dx * 1e-6)[0][0]
+            if idx <= 0:
+                idx = 1
+            if idx >= npts:
+                idx = npts - 2
+
+            for i, res in enumerate(self.vResults):
+                eta[i] = res.vRes[0].R[idx]
+
+        elif load_effect.upper() == "D":
+            dx = x[2] - x[1]
+            idx = np.where(np.abs(x - poi) <= dx * 1e-6)[0][0]
+            for i, res in enumerate(self.vResults):
+                eta[i] = res.vRes[0].D[idx]
+
         return (np.array(self.pos), eta)
 
-    def plot_il(self, poi: float, load_effect: str, ax: Optional[plt.Axes] = None):
+    def plot_il(self, poi: float, load_effect: str, ax: Optional[plt.Axes] = None, z_na: Optional[float] = 0.0):
         """
         Retrieves and plots the IL on either a supplied or new axes.
 
@@ -205,15 +235,21 @@ class InfluenceLines:
                 - **V**: shear force
                 - **M**: bending moment
                 - **R**: vertical reaction at a fully restrained support
+                - **MR**: moment reaction at a fully restrained support
+                - **S**: strain at distance, z_na, from the NA
+                - **T**: rotation
+                - **D**: displacement
 
             The vertical reaction nearest the `poi` is used. For moment reactions
             use a poi at or just beside the support.
         ax : Optional[plt.Axes]
             A user-supplied matplotlib Axes object; when None (default), one is
             created for the plot.
+        z_na: float
+            The vertical distance from the neutral axis, only used for strain. Defaults to 0.0.
         """
 
-        (x, y) = self.get_il(poi, load_effect)
+        (x, y) = self.get_il(poi, load_effect, z_na)
 
         if ax is None:
             fig, ax = plt.subplots()
